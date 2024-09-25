@@ -8,7 +8,7 @@
 <body>
   <h1> WebRTC-Audio-Recorder-Test</h1>
   <button id="callButton">Call</button>
-  <button id="disconnectButton">Disconnect</button>
+  <button id="sendButton">Send</button>
   <button id="playButton">Play</button>
 
   <script>
@@ -51,7 +51,7 @@
       ws.send(JSON.stringify({ type: 'offer', sdp: peerConnection.localDescription }));
     });
 
-    document.getElementById('disconnectButton').addEventListener('click', () => {
+    document.getElementById('sendButton').addEventListener('click', () => {
       if (peerConnection) {
         peerConnection.close();
       }
