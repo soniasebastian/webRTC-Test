@@ -1,0 +1,98 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>WebRTC Audio Recorder</title>
+</head>
+<body>
+  <h1> WebRTC-Audio-Recorder-Test</h1>
+  <button id="callButton">Call</button>
+  <button id="disconnectButton">Disconnect</button>
+  <button id="playButton">Play</button>
+
+  <script>
+    let peerConnection;
+    let localStream;
+    let audioChunks = [];
+    let mediaRecorder;
+
+    const ws = new WebSocket(`ws://${window.location.host}`);
+
+    document.getElementById('callButton').addEventListener('click', async () => {
+      // Start capturing the audio
+      localStream = await navigator.mediaDevices.getUserMedia({ audio: true });
+
+      // Create a MediaRecorder to capture audio data
+      mediaRecorder = new MediaRecorder(localStream);
+      
+      // Collect audio data into chunks
+      mediaRecorder.ondataavailable = (event) => {
+        if (event.data.size > 0) {
+          audioChunks.push(event.data);
+        }
+      };
+
+      mediaRecorder.start();
+
+      // Create a new RTCPeerConnection
+      peerConnection = new RTCPeerConnection();
+
+      // Add local audio track to the peer connection
+      localStream.getTracks().forEach((track) => {
+        peerConnection.addTrack(track, localStream);
+      });
+
+      // Create an offer and set it as the local description
+      const offer = await peerConnection.createOffer();
+      await peerConnection.setLocalDescription(offer);
+
+      // Send the offer to the server via WebSocket
+      ws.send(JSON.stringify({ type: 'offer', sdp: peerConnection.localDescription }));
+    });
+
+    document.getElementById('disconnectButton').addEventListener('click', () => {
+      if (peerConnection) {
+        peerConnection.close();
+      }
+
+      // Stop the media recorder and send the recorded audio to the server
+      mediaRecorder.stop();
+
+      // Once the recording stops, send the audio chunks to the server
+      mediaRecorder.onstop = () => {
+        const audioBlob = new Blob(audioChunks, { type: 'audio/webm' });
+        const reader = new FileReader();
+
+        reader.onloadend = () => {
+          const base64Audio = reader.result.split(',')[1]; // Get base64 portion
+          ws.send(JSON.stringify({ type: 'audio', audioData: base64Audio }));
+        };
+        reader.readAsDataURL(audioBlob);
+      };
+    });
+
+    document.getElementById('playButton').addEventListener('click', () => {
+      // Request the server to play the recorded audio
+      ws.send(JSON.stringify({ type: 'play' }));
+    });
+
+    ws.onmessage = (message) => {
+      const signal = JSON.parse(message.data);
+
+      if (signal.type === 'answer') {
+        // Set the remote description from the server
+        peerConnection.setRemoteDescription(signal.sdp);
+      }
+
+      if (signal.type === 'playback') {
+        // Receive the base64-encoded audio data and play it
+        const audioBlob = new Blob([Uint8Array.from(atob(signal.audioData), c => c.charCodeAt(0))], { type: 'audio/webm' });
+        const audioUrl = URL.createObjectURL(audioBlob);
+        const audio = new Audio(audioUrl);
+        audio.play();
+      }
+    };
+  </script>
+</body>
+</html>
